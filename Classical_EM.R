@@ -1,5 +1,5 @@
 #' ##############
-#' Implementation of the 'classial' EM algorithm
+#' Implementation of the 'classical' EM algorithm
 #' on a linear mixed effects model with random intercept only.
 #' Toy example
 #' Y = XB + ui + eps
@@ -29,6 +29,7 @@ long.data <- data.frame(id = rep(1:num_subj, each = num_times),
                         x1 = rep(x1, each = num_times),
                         x2 = rep(x2, each = num_times),
                         Y = Y)
+# Actual fits
 actual.fit <- lmer(Y ~ x1 + x2 + (1|id), data = long.data, REML = F)
 summary(actual.fit)
 actual.ll <- summary(actual.fit)$logLik
@@ -84,7 +85,7 @@ resid <- Y-Xb
 u.0 <- c(var.0)^2 * t(resid) %*% Vinv %*% Vinv %*% resid + 
           tr(c(var.0) * diag(n) - c(var.0)^2 * Vinv)
 u.1 <- c(var.1)^2 * t(resid) %*% Vinv %*% Z %*% t(Z) %*% Vinv %*% resid + 
-           tr(c(var.1) * diag(100) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z is wrong maybe.
+           tr(c(var.1) * diag(100) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z may be wrong.
 
 # Alternative, commented out atm
 # temp1 <- Vinv %*% resid
