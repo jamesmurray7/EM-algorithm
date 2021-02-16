@@ -52,18 +52,34 @@ tr <- function(x) sum(diag(x))
 ll <- function(Y,X,Z,beta,var.0,var.1){
   # Covariance matrix
   V <- c(var.1) * Z %*% t(Z) + c(var.0) * diag(length(Y))
-  Vinv <- solve(V)
+  Vinv <- solve(V) # sqrt
   
   # X %*% beta and the residuals (epsilon)
   Xb <- X %*% beta
   resid <- Y-Xb
   
-  # The log-likelihood
-  -0.5 * (t(resid) %*% Vinv %*% resid) - 0.5 * log(det(V))
+  # The log-likelihood 
+  #   same as t(resid) %*% Vinv %*% resid --> sum(forwardsolve(l = t(V.sqrt), x = resid) ^ 2 )
+  -0.5 * (t(resid) %*% Vinv %*% resid) - 0.5 * log(det(V)) # determinant(V, logarithm = T)
+                                                           # or sum(log(diag(cV))) * 2 where cV cholesky(V)
+}
+
+ll.chol <- function(Y,X,Z,beta,var.0,var.1){ # Should be faster
+  V <- c(var.1) * Z %*% t(Z) + c(var.0) * diag(length(Y))
+  V.sqrt <- chol(V)
+  detV <- sum(log(diag(V.sqrt))) * 2
+  # X, beta and residuals
+  Xb <- X %*% beta
+  resid <- Y - Xb
+  temp <- sum(forwardsolve(l = t(V.sqrt), x = resid) ^ 2)
+  return(
+    -0.5 * temp - 0.5 * detV
+  )
 }
 
 # Values from actual fit to check ...
 ll(Y,X,Z,beta = actual.fit@beta, var.0 = sigma(actual.fit) ^ 2, var.1 = 0.5 ^ 2) 
+ll.chol(Y,X,Z,beta = actual.fit@beta, var.0 = sigma(actual.fit) ^ 2, var.1 = 0.5 ^ 2)
 actual.ll #  Seems to be appx. double that produced by my ll function. 
 
 # Classical EM - Single run -----------------------------------------------
@@ -98,7 +114,8 @@ w <- Xb + c(var.0) * Vinv %*% resid
  # M-step ----
 # Estimate \sigma^(t+1)
 var.0.new <- u.0/600
-var.1.new <- u.1/600
+var.1.new <- u.1/100
+
 # And estimate \beta
 beta.new <- solve(t(X) %*% X) %*% t(X) %*% w
 message(
@@ -107,5 +124,59 @@ message(
   "\nold beta: [", beta[1], beta[2], beta[3],"] new beta: [", beta.new[1], beta.new[2], beta.new[3],"]"
 )
 ll.new <- ll(Y, X, Z, beta.new, var.0.new, var.1.new)
+ll.new <- ll.chol(Y,X,Z,beta.new,var.0.new,var.1.new)
 var.0 <- var.0.new; var.1 <- var.1.new; beta <- beta.new
+
+
 # And then repeat the algorithm until diff < tol ! 
+#    Choleskys / SVDs
+#    Matrix inversions
+
+
+# Functionise -------------------------------------------------------------
+diff <- 10
+iter <- 1
+var.1 <- var.0 <- 0.25
+beta <- matrix(c(30, -5, 0.5),ncol=1)
+
+while(diff > tol & iter <= maxiter){
+  L0 <- ll.chol(Y, X, Z,  beta, var.0, var.1) 
+  
+  # E step ----
+  # Covariance stuff
+  V <- c(var.1) * Z %*% t(Z) + c(var.0) * diag(n)
+  Vinv <- solve(V)
+  # X %*% beta and resulting residuals
+  Xb <- X %*% beta
+  resid <- Y-Xb
+  # Calculate expectations uiuiT (call this u.0 (ie eps) and u.1)
+  
+  u.0 <- c(var.0)^2 * t(resid) %*% Vinv %*% Vinv %*% resid + 
+    tr(c(var.0) * diag(n) - c(var.0)^2 * Vinv)
+  u.1 <- c(var.1)^2 * t(resid) %*% Vinv %*% Z %*% t(Z) %*% Vinv %*% resid + 
+    tr(c(var.1) * diag(100) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z may be wrong.
+  
+  w <- Xb + c(var.0) * Vinv %*% resid
+  
+  # M step ----
+  var.0.new <- u.0/600
+  var.1.new <- u.1/600
+  beta.new <- solve(t(X) %*% X) %*% t(X) %*% w
+  
+  # New ll
+  L1 <- ll.chol(Y,X,Z,beta.new,var.0.new, var.1.new)
+  diff <- abs(L1-L0)
+  # Print out
+  L0.round <- round(L0, 5); L1.round <- round(L1,5); diff.round <- round(diff, 11)
+  beta.new.round <- round(beta.new,2); b1 <- beta.new.round[1]; b2 <- beta.new.round[2]; b3 <- beta.new.round[3]
+  sigma0.print <- round(sqrt(var.0.new), 2); sigma1.print <- round(sqrt(var.1.new),2)
+  
+  message("Iteration ", iter, " diff = ", diff.round)
+  message("For beta = [", b1, ", ", b2, ", ", b3, "], sigma01 = [", sigma0.print, ", ", sigma1.print,"]")
+  # Set new parameters
+  var.0 <- var.0.new
+  var.1 <- var.1.new
+  beta <- beta.new
+  iter <- iter + 1
+}
+# Remember true values should be beta = [40, -10, 1.5]; sigma01=[1.5, 0.5]
