@@ -21,16 +21,18 @@ ll <- function(X, Y, Z, beta, var.0, var.1){
 classic.em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 = var.1,
                        tol = 1e-10, maxiter = 2000){
   message("EM Algorithm ----\nDimensions: ", nrow(Y), " x ", ncol(X)-1, 
-          "\nInitial estimates: beta =  ", beta0, "\nsigma0 = ", sqrt(init.var.0),"; sigma1 = ", sqrt(init.var.1),
+          "\nInitial estimates: beta =  ", init.beta, "\nsigma0 = ", sqrt(init.var.0),"; sigma1 = ", sqrt(init.var.1),
           "tol = ", tol, " maximum iterations = ", maxiter)
   
   diff <- 100
   iter <- 0
   var.0 <- init.var.0; var.1 <- init.var.1; beta = init.beta
   
+  n <- length(Y); q1 <- ncol(Z)
+  
   t0 <- proc.time()
   while(diff > tol & iter <= maxiter){
-    L0 <- ll(Y, X, Z,  beta, var.0, var.1) 
+    L0 <- ll(X, Y, Z,  beta, var.0, var.1) 
     
     # E step ----
     # Covariance stuff
@@ -44,17 +46,17 @@ classic.em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 
     u.0 <- c(var.0)^2 * t(resid) %*% Vinv %*% Vinv %*% resid + 
       tr(c(var.0) * diag(n) - c(var.0)^2 * Vinv)
     u.1 <- c(var.1)^2 * t(resid) %*% Vinv %*% Z %*% t(Z) %*% Vinv %*% resid + 
-      tr(c(var.1) * diag(100) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z may be wrong.
+      tr(c(var.1) * diag(q1) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z may be wrong.
     
     w <- Xb + c(var.0) * Vinv %*% resid
     
     # M step ----
-    var.0.new <- u.0/600
-    var.1.new <- u.1/100
+    var.0.new <- u.0/n
+    var.1.new <- u.1/q1
     beta.new <- solve(t(X) %*% X) %*% t(X) %*% w
     
     # New ll
-    L1 <- ll(Y,X,Z,beta.new,var.0.new, var.1.new)
+    L1 <- ll(X, Y, Z, beta.new, var.0.new, var.1.new)
     diff <- abs(L1-L0)
     # Print out
     L0.round <- round(L0, 5); L1.round <- round(L1,5); diff.round <- round(diff, 11)
@@ -80,7 +82,7 @@ classic.em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 
 classicH.em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 = var.1,
                        tol = 1e-10, maxiter = 2000){
   message("EM Algorithm ----\nDimensions: ", nrow(Y), " x ", ncol(X)-1, 
-          "\nInitial estimates: beta =  ", beta0, "\nsigma0 = ", sqrt(init.var.0),"; sigma1 = ", sqrt(init.var.1),
+          "\nInitial estimates: beta =  ", init.beta, "\nsigma0 = ", sqrt(init.var.0),"; sigma1 = ", sqrt(init.var.1),
           "tol = ", tol, " maximum iterations = ", maxiter)
 
   
@@ -91,9 +93,11 @@ classicH.em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1
   iter.hist <- data.frame(iteration = iter, t(beta), sigma0=sqrt(var.0), sigma1=sqrt(var.1),
                           loglik = ll(Y,X,Z, beta = beta, var.0 = var.0, var.1 = var.1))
   
+  n <- length(Y); q1 <- ncol(Z)
+  
   t0 <- proc.time()
   while(diff > tol & iter <= maxiter){
-    L0 <- ll(Y, X, Z,  beta, var.0, var.1) 
+    L0 <- ll(X, Y, Z, beta, var.0, var.1) 
     
     # E step ----
     # Covariance stuff
@@ -107,17 +111,17 @@ classicH.em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1
     u.0 <- c(var.0)^2 * t(resid) %*% Vinv %*% Vinv %*% resid + 
       tr(c(var.0) * diag(n) - c(var.0)^2 * Vinv)
     u.1 <- c(var.1)^2 * t(resid) %*% Vinv %*% Z %*% t(Z) %*% Vinv %*% resid + 
-      tr(c(var.1) * diag(100) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z may be wrong.
+      tr(c(var.1) * diag(q1) - c(var.1)^2 * t(Z) %*% Vinv %*% Z) #  This not working for diag(600) makes me think Z may be wrong.
     
     w <- Xb + c(var.0) * Vinv %*% resid
     
     # M step ----
-    var.0.new <- u.0/600
-    var.1.new <- u.1/100
+    var.0.new <- u.0/n
+    var.1.new <- u.1/q1
     beta.new <- solve(t(X) %*% X) %*% t(X) %*% w
     
     # New ll
-    L1 <- ll(Y,X,Z,beta.new,var.0.new, var.1.new)
+    L1 <- ll(X, Y, Z, beta.new, var.0.new, var.1.new)
     diff <- abs(L1-L0)
     # Print out
     L0.round <- round(L0, 5); L1.round <- round(L1,5); diff.round <- round(diff, 11)
