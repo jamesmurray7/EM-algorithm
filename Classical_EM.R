@@ -134,10 +134,16 @@ var.0 <- var.0.new; var.1 <- var.1.new; beta <- beta.new
 
 
 # Functionise -------------------------------------------------------------
-diff <- 10
-iter <- 1
+# Computational parameters: 
+diff <- 10; tol <- 1e-10
+iter <- 1; maxiter <- 2e3
+
+n <- nrow(Y)
+q1 <- nrow(Z) #  Unsure if this should be 100 (i.e. number of unique U's or 600, length of matrix)
+# Initial conditions
 var.1 <- var.0 <- 0.25
-beta <- matrix(c(30, -5, 0.5),ncol=1)
+# beta <- matrix(c(30, -5, 0.5),ncol=1)
+beta <- matrix(lm(Y~x1+x2, data = long.data)$coef, ncol = 1)
 
 while(diff > tol & iter <= maxiter){
   L0 <- ll.chol(Y, X, Z,  beta, var.0, var.1) 
@@ -160,7 +166,7 @@ while(diff > tol & iter <= maxiter){
   
   # M step ----
   var.0.new <- u.0/600
-  var.1.new <- u.1/600
+  var.1.new <- u.1/100
   beta.new <- solve(t(X) %*% X) %*% t(X) %*% w
   
   # New ll
