@@ -64,7 +64,7 @@ em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 = var.1,
     # M step ----
     var.0.new <- u.0/n
     var.1.new <- u.1/q1
-    beta.new <- solve(XtX) %*% t(X) %*% w
+    beta.new <- solve(XtX) %*% crossprod(X,w)
     
     # New parameter set
     params.new <- c(t(beta.new), var.0.new, var.1.new)

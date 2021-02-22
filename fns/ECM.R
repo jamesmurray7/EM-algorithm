@@ -11,7 +11,7 @@ rm(list = ls())
 tr <- function(x) sum(diag(x))
 # Log likelihood
 ll <- function(X, Y, Z, beta, var.0, var.1){ 
-  V <- c(var.1) * Z %*% t(Z) + c(var.0) * diag(length(Y))
+  V <- c(var.1) * tcrossprod(Z) + c(var.0) * diag(length(Y))
   V.sqrt <- chol(V)
   detV <- sum(log(diag(V.sqrt))) * 2
   # X, beta and residuals
@@ -19,11 +19,11 @@ ll <- function(X, Y, Z, beta, var.0, var.1){
   resid <- Y - Xb
   temp <- sum(forwardsolve(l = t(V.sqrt), x = resid) ^ 2)
   return(
-    -0.5 * temp - 0.5 * detV
+    -0.5*length(Y)*log(2*pi) + -0.5 * temp - 0.5 * detV
   )
 }
 # Computation of covariance matrix
-getV <- function(var.0,var.1,n) c(var.1) * Z %*% t(Z) + c(var.0) * diag(n)
+getV <- function(var.0,var.1,n) c(var.1) * tcrossprod(Z) + c(var.0) * diag(n)
 
 
 # ECM function 
@@ -60,9 +60,9 @@ ecm <- function(X, Y, Z, init.beta, init.var.0, init.var.1,
     
     # Calculate expectations uiuiT (call this u.0 (ie eps) and u.1)
     z <- forwardsolve(t(V.sqrt), Z)
-    u.0 <- c(var.0)^2 * t(resid) %*% Vinv %*% Vinv %*% resid + 
+    u.0 <- c(var.0)^2 * crossprod(resid,Vinv) %*% Vinv %*% resid + 
       tr(c(var.0) * diag(n) - c(var.0)^2 * Vinv)
-    u.1 <- c(var.1)^2 * t(resid) %*% Vinv %*% Z %*% t(Z) %*% Vinv %*% resid + 
+    u.1 <- c(var.1)^2 * crossprod(resid,Vinv) %*% tcrossprod(Z) %*% Vinv %*% resid + 
       tr(c(var.1) * diag(q1) - c(var.1)^2 * crossprod(z))
     
     # M-step ----
@@ -76,7 +76,7 @@ ecm <- function(X, Y, Z, init.beta, init.var.0, init.var.1,
     Vinv <- solve(V)
     Gamma <- X %*% beta + c(var.0.new) * Vinv %*% resid
     # And estimate \beta
-    beta.new <- solve(XtX) %*% t(X) %*% Gamma
+    beta.new <- solve(XtX) %*% crossprod(X, Gamma)
     message("CM step 2 done, new beta = ", beta.new)
     
     l1 <- ll(X,Y,Z, beta.new, var.0.new, var.1.new)
