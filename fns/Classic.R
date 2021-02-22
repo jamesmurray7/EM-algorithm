@@ -49,7 +49,7 @@ em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 = var.1,
     Vinv <- solve(V)
     V.sqrt <- chol(V)
     # X %*% beta and resulting residuals
-    Xtx <- crossprod(X)
+    XtX <- crossprod(X)
     Xb <- X %*% beta
     resid <- Y-Xb
     
