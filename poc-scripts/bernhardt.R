@@ -36,4 +36,22 @@ u0u0(theta0)
 
 optim(par = theta0, u0u0, method = "L-BFGS-B",#, lower = c(35, -15, 1, 0.1, 0.1), upper = c(45, -5, 2, 3, 1),
       control = list(fnscale = -1, REPORT = 1))
-nlm(u0u0, theta0,fscale=-1)
+# Not working properly with/out bounds on optim
+
+# Since beta a good estimate, try and just estimate variance terms?
+theta <- c(var.0.init, var.1.init)
+n <- length(Y); q <- ncol(Z)
+
+u0u0.vars <- function(theta){
+  V <- c(theta[2]) * tcrossprod(Z) + c(theta[1]) * diag(n)
+  V.inv <- solve(V)
+  Xb <- X %*% beta0
+  resid <- Y - Xb
+  c(theta[1])^2 * crossprod(resid, V.inv) %*% V.inv %*% resid +
+    tr(c(theta[1]) * diag(n) - c(theta[1])^2 * V.inv)
+}
+
+optim(theta, u0u0.vars, method = "L-BFGS-B", control = list(trace = 3, fnscale = -1),
+      lower = c(0,0))
+constrOptim(theta, u0u0.vars, grad = NULL,
+            ui = diag(2), ci = c(0,0))
