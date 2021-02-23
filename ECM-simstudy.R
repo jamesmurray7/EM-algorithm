@@ -111,7 +111,7 @@ ecm.fit <- function(x){
 }
 
 simulated.fits <- lapply(simulated.data, ecm.fit)
-
+save(simulated.fits, file = "../tempfitsECM.RData")
 
 # Plot iteration histories ------------------------------------------------
 
@@ -123,8 +123,6 @@ for(i in 1:length(simulated.fits)){
   iter.hists[[i]] <- simulated.fits[[i]]$iter.hist
 }
 iter.hists <- bind_rows(iter.hists)
-iter.hists$X4 <- sqrt(iter.hists$X4)
-iter.hists$X5 <- sqrt(iter.hists$X5)
 
 # Find where new id begins
 iter.hists <- iter.hists %>% 
@@ -134,12 +132,12 @@ iter.hists <- iter.hists %>%
 
 # Plot iteration histories
 iter.hists %>% 
-  pivot_longer(cols = X1:X5, names_to = "param", values_to = "estimate") %>% 
+  pivot_longer(cols = c(X1:X3, var.0, var.1), names_to = "param", values_to = "estimate") %>% 
   ggplot(aes(x = iter, y = estimate, group = grp.c)) + 
   geom_line(alpha = .5) + 
   facet_grid(param~id, scales = "free_y") + 
   theme_bw()
-ggsave("../GridIterHist.png")
+ggsave("../GridIterHistECM.png")
 
 # Plot time taken ---------------------------------------------------------
 times <- data.frame(id = id, time = NA)
@@ -157,4 +155,29 @@ times %>%
     strip.background = element_blank(),
     strip.text = element_blank()
   )
-ggsave("../ClassicTimes.png")
+ggsave("../ECMTimes.png")
+
+# Compare time taken in EM and ECM ----------------------------------------
+rm(list = setdiff(ls(), "id"))
+
+setwd("../")
+load("EMfits.RData")
+em <- simulated.fits
+load("tempfitsECM.RData")
+ecm <- simulated.fits
+
+times.em <- data.frame(id = id, time = NA)
+times.ecm <- times.em
+
+for(i in 1:nrow(times.em)){
+  times.em[i, 2] <- em[[i]]$time
+  times.ecm[i, 2] <- ecm[[i]]$time
+}
+
+times.em$alg <- "EM"; times.ecm$alg <- "ECM"
+times <- rbind(times.em, times.ecm)
+
+times %>% 
+  ggplot(aes(x = alg, y = time)) + 
+  geom_boxplot() + 
+  facet_wrap(~id, scales = "free")
