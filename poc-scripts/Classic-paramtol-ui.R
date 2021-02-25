@@ -1,100 +1,54 @@
 #' ###############
-#' Updating first implementation of Classic EM
-#' to utilise maximum parameter difference rather than log-likelihood
-#' as this should save computation time.
+#' Updating Classic EM
+#' to produce estimates for individual u_is. POST-HOC
+#' Short compare with lmer uis.
 #' ###############
 
-tr <- function(x) sum(diag(x))
-ll <- function(X, Y, Z, beta, var.0, var.1){ 
-  V <- c(var.1) * tcrossprod(Z) + c(var.0) * diag(length(Y)) # sigma.u * ZZt + sigma.eIn
-  V.sqrt <- chol(V)
-  detV <- sum(log(diag(V.sqrt))) * 2
-  # X, beta and residuals
-  Xb <- X %*% beta
-  resid <- Y - Xb
-  temp <- sum(forwardsolve(l = t(V.sqrt), x = resid) ^ 2)
-  return(
-    -0.5*length(Y)*log(2*pi) -0.5 * temp - 0.5 * detV
-  )
+rm(list=ls())
+setwd("~/Documents/PhD/EM-Algorithm/fns")
+library(lme4)
+source("simlong.R")
+source("Classic-paramtol.R")
+# Post-processing for U-i.
+# Gamma_i = (N_i/(sigma.epsilon^2) + 1/(sigma.u^2))^-1
+# u_i = Gamma_i * Z_i * (Y - Xb)/(sigma.epsilon^2)
+x <- simlong(100,5)
+X <- x$X; Y <- x$Y;Z <- x$Z
+beta0 <- matrix(lm(Y~x1+x2, data = x$long.data)$coef,nc=1)
+
+
+em.fit <- em(X,Y,Z,beta0,1,1)
+sigma.e <- em.fit$sigma.0; sigma.u <- em.fit$sigma.1
+var.e <- sigma.e^2; var.u <- sigma.u^2
+betas <- em.fit$beta
+dat <- x$long.data
+
+# bi = ZiSigmae^-1Sigmau * (Yi- Xi73)
+
+ui <- c() # This way from Laird
+for(i in unique(dat$id)){
+  i.data <- subset(dat, id == i)
+  Yi <- i.data$Y; Xi <- cbind(1, i.data$x1, i.data$x2)
+  Zi <- matrix(rep(1,5),ncol = 1)
+  residi <- Yi - Xi %*% betas
+  Sigma <- Zi %*% var.u %*% t(Zi) + c(var.e) * diag(length(Yi))
+  Sigma.inv <- solve(Sigma)
+  ui[i] <- t(Zi %*% var.u) %*% Sigma.inv %*% residi
 }
 
-# Define EM function ------------------------------------------------------
-em <- function(X,Y,Z, init.beta = beta0, init.var.0 = var.0, init.var.1 = var.1,
-                       tol = 1e-3, maxiter = 2000, history = F){
-  message("EM Algorithm ----\nDimensions: ", nrow(Y), " x ", ncol(X)-1, 
-          "\nInitial estimates: beta =  ", init.beta, "\nsigma0 = ", sqrt(init.var.0),"; sigma1 = ", sqrt(init.var.1),
-          "tol = ", tol, " maximum iterations = ", maxiter)
-  
-  diff <- 100
-  iter <- 0
-  
-  var.0 <- init.var.0; var.1 <- init.var.1; beta = init.beta
-  
-  if(!"matrix" %in% class(beta)){
-    beta <- matrix(beta, ncol = 1)
-  }
-  
-  params <- c(t(beta), var.0, var.1)
-  if(history) iter.hist <- data.frame(iter, t(params))
-
-  n <- length(Y); q1 <- ncol(Z)
-  
-  t0 <- proc.time()[3]
-  # Begin while loop
-  while(diff > tol & iter <= maxiter){
-    
-    # E step ----
-    # Covariance stuff
-    V <- c(var.1) * tcrossprod(Z) + c(var.0) * diag(n)
-    Vinv <- solve(V)
-    V.sqrt <- chol(V)
-    # X %*% beta and resulting residuals
-    XtX <- crossprod(X)
-    Xb <- X %*% beta
-    resid <- Y-Xb
-    # Calculate expectations uiuiT (call this u.0 (ie eps) and u.1)
-    z <- forwardsolve(t(V.sqrt), Z)
-    u.0 <- c(var.0)^2 * crossprod(resid, Vinv) %*% Vinv %*% resid +
-      tr(c(var.0) * diag(n) - c(var.0)^2 * Vinv)
-    u.1 <- c(var.1)^2 * crossprod(resid, Vinv) %*% tcrossprod(Z) %*% Vinv %*% resid +
-      tr(c(var.1) * diag(q1) - c(var.1)^2 * crossprod(z))
-    
-    w <- Xb + c(var.0) * Vinv %*% resid
-    
-    # M step ----
-    var.0.new <- u.0/n
-    var.1.new <- u.1/q1
-    beta.new <- solve(XtX) %*% crossprod(X,w)
-    
-    # New parameter set
-    params.new <- c(t(beta.new), var.0.new, var.1.new)
-    diffs <- abs(params.new-params)
-    diff <- max(diffs)
-    print(params)
-    print(params.new) 
-    print(diffs)
-    print(diff)
-    
-    message("Iteration ", iter, " largest difference = ", diff)
-    
-    # Set new parameters
-    var.0 <- var.0.new
-    var.1 <- var.1.new
-    beta <- beta.new
-    iter <- iter + 1
-    params <- c(t(beta), var.0, var.1) # 60 minutes before realised this was missing !
-    
-    # Record history if needed
-    if(history) iter.hist <- rbind(iter.hist, c(iter, t(params.new)))
-  }
-  t1 <- proc.time()[3]
-  message("EM Complete after ", iter, " iterations, this took ", round(t1-t0,2), " seconds.")
-  if(history){
-    rtn <- list(beta = beta, sigma.0 = sqrt(var.0), sigma.1 = sqrt(var.1), iter.hist = iter.hist,
-                time = t1-t0, iter = iter, ll = ll(X,Y,Z,beta,var.0,var.1))
-  }else{
-    rtn <- list(beta = beta, sigma.0 = sqrt(var.0), sigma.1 = sqrt(var.1),
-                time = t1-t0, iter = iter, ll = ll(X,Y,Z,beta,var.0,var.1))
-  }
-  rtn
+ui2 <- c() # This from the website and given by Pete in meeting.
+for(i in unique(dat$id)){
+  i.data <- subset(dat, id == i)
+  Yi <- i.data$Y; Xi <- cbind(1, i.data$x1, i.data$x2)
+  Zi <- matrix(rep(1,5),ncol = 1)
+  residi <- Yi - Xi %*% betas
+  Gamma_i <- solve(length(Yi)/var.e + 1/var.u)
+  test <- (Gamma_i %*% t(Zi) %*% residi)/var.e
+  ui2[i] <- test
 }
+
+# Either method produces good estimates, it seems.
+plot(ui, ranef(x$lmer.fit)$id$`(Intercept)`, pch = 19, cex = .5)
+lines(-10:10,-10:10)
+plot(ui2, ranef(x$lmer.fit)$id$`(Intercept)`, pch = 19, cex = .5)
+lines(-10:10,-10:10)
