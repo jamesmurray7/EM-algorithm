@@ -1,7 +1,5 @@
 #' ###############
-#' Updating Classic EM
-#' to produce estimates for individual u_is. POST-HOC
-#' Short compare with lmer uis.
+#' Single run to see if Classic EM produces Uis under two approaches.
 #' ###############
 
 rm(list=ls())

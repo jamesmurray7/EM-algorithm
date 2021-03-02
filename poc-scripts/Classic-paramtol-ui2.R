@@ -1,7 +1,6 @@
 #' ###############
-#' Updating first implementation of Classic EM
-#' to utilise maximum parameter difference rather than log-likelihood
-#' as this should save computation time.
+#' Updating Classic EM function wrap to calculate 
+#' uis post-hoc.
 #' ###############
 
 tr <- function(x) sum(diag(x))
