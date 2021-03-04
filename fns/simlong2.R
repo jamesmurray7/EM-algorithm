@@ -42,5 +42,3 @@ simlong <- function(num_subj = 250, num_times = 5,
     list(X = X, Y = Y, Z = Z, long.data = long.data, lmer.fit = actual.fit)
   )
 }
-
-simlong(Sigma = SigmaGen(1.5,0.5))
