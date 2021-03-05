@@ -53,7 +53,9 @@ b.ll <- function(b, Y, X, Z, beta, n){ # Note this is strictly 1-D.
 
 optim.b <- function(b0, Y, X, Z, beta, n){
   op <- optim(b0, b.ll, NULL, Y, X, Z, beta, n, 
-              control = list(fnscale = -1)) # Don't think constraints are necessary, but may be good practice to include
+              control = list(fnscale = -1),
+              method = "L-",
+              lower=c(-10,1e-3), upper = c(10, Inf)) # Don't think constraints are necessary, but may be good practice to include?
   op
 }
 
@@ -194,8 +196,9 @@ b.inits <- ranef(x$lmer.fit)$id$`(Intercept)`
 beta <- lm(Y~x1+x2,data=dat)$coef
 
 test <- em.bern(data = dat,
-        beta.init = beta, 
-        var.0.init = 1, var.1.init = 1, b.init = b.inits, tol = 1e-3)
+        beta.init = c(25,-5,1),  # Try with worse/good starting values for beta
+        var.0.init = 1, var.1.init = 1, 
+        b.init = rep(0,250), tol = 1e-3) # Try with b.inits=rep(0,num_subj)
 
 plot(test$REs, ranef(x$lmer.fit)$id$`(Intercept)`,pch=19, cex=.5); lines(-10:10,-10:10) # This is probably expected
 sqrt(test$var.0) # target: 1.5
@@ -205,3 +208,7 @@ summary(x$lmer.fit)
 
 test$last.b
 test$last.Sigma
+
+par(mfrow=c(2,1))
+hist(test$last.b); hist(test$last.Sigma)
+par(mfrow=c(1,1))
