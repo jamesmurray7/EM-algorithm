@@ -53,10 +53,7 @@ b.ll <- function(b, Y, X, Z, beta, n){ # Note this is strictly 1-D.
 
 optim.b <- function(b0, Y, X, Z, beta, n){
   op <- optim(b0, b.ll, NULL, Y, X, Z, beta, n, 
-              method = "L-BFG",
-              control = list(fnscale = -1),
-              lower = c(-5,0.01),
-              upper = c(5,2))
+              control = list(fnscale = -1)) # Don't think constraints are necessary, but may be good practice to include
   op
 }
 
@@ -71,8 +68,9 @@ em.bern <- function(data,
   # Data-specific
   uids <- unique(data$id)
   n <- length(uids)
-  Zi <- matrix(rep(1, 5), nc = 1) # We can cheat a little with Zi and ni as no missingness!
-  ni <- 5
+  ni <- nrow(data)/n
+  Zi <- matrix(rep(1, ni), nc = 1) # We can cheat a little with Zi and ni as no missingness!
+  
   
   # Sort parameter estimates out and intialise the parameter vector
   beta <- beta.init;
@@ -118,11 +116,11 @@ em.bern <- function(data,
     # CM step 1
     # Updates for B and var.1
     B.new <- sum(b.hat)/n
-    for(i in 1:length(b.hat)){
+    for(i in uids){
       #D.cont[i] <- sigma.hat[i] + tcrossprod(b.hat[i]-B.new)
       #D.cont[i] <- var(b.hat) + tcrossprod(b.hat[i]-B.new)
       #D.cont[i] <- 1/sigma.hat[i] * crossprod(Zi) + tcrossprod(b.hat[i] - B.new)
-      D.cont[i] <- solve(1/sigma.hat[i] * crossprod(Zi) * -1) + tcrossprod(b.hat[i] - B.new)
+      D.cont[i] <- solve(-1/sigma.hat[i] * crossprod(Zi)) + tcrossprod(b.hat[i] - B.new)
     }
     var.1.new <- sum(D.cont)/n
     var.0.new <- sum(e)/sum(nis)
@@ -181,7 +179,8 @@ em.bern <- function(data,
   }
   
   rtn <- list(
-    beta = beta, var.0 = var.0, var.1 = var.1, B = B, last.b = b.hat,
+    beta = beta, var.0 = var.0, var.1 = var.1, B = B, 
+    last.b = b.hat, last.Sigma = sigma.hat,
     REs = REs, iter = iter, time=t1-t0
   )
   if(logLik) rtn <- c(rtn, logLik = sum(ll.temp))
@@ -189,10 +188,20 @@ em.bern <- function(data,
   rtn
 }
 
+x <- simlong(250,10)
+dat <- x$long.data
+b.inits <- ranef(x$lmer.fit)$id$`(Intercept)`
+beta <- lm(Y~x1+x2,data=dat)$coef
+
 test <- em.bern(data = dat,
         beta.init = beta, 
-        var.0.init = 1, var.1.init = 1, b.init = b.inits, tol = 1e-5)
-plot(test$REs, ranef(x$lmer.fit)$id$`(Intercept)`); lines(-1:1,-1:1) # This is probably expected
+        var.0.init = 1, var.1.init = 1, b.init = b.inits, tol = 1e-3)
+
+plot(test$REs, ranef(x$lmer.fit)$id$`(Intercept)`,pch=19, cex=.5); lines(-10:10,-10:10) # This is probably expected
 sqrt(test$var.0) # target: 1.5
 sqrt(test$var.1) # target: 0.5
 summary(x$lmer.fit)$logLik; test$logLik # Broadly good agreement.
+summary(x$lmer.fit)
+
+test$last.b
+test$last.Sigma
