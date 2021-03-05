@@ -180,4 +180,12 @@ em <- function(data,
   rtn
 }
 
-em(data = dat, init.beta = beta.inits, init.var.0 = 1, init.D = D.init, tol=1e-3)
+test <- em(data = dat, init.beta = beta.inits, init.var.0 = 1, init.D = D.init, tol=1e-3)
+
+sqrt(test$var.0) # good
+sqrt(test$D) # good
+test$logLik; summary(x$lmer.fit)$logLik # good
+par(mfrow=c(1,2))
+plot(test$REs[,1], ranef(x$lmer.fit)$id$`(Intercept)`); lines(-10:10,-10:10,col="red")
+plot(test$REs[,2], ranef(x$lmer.fit)$id$`time`); lines(-10:10,-10:10,col="red")
+par(mfrow=c(1,1))
