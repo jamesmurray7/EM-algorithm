@@ -109,10 +109,16 @@ Z1 <- getZ(dat, 1); X1 <- getX(dat, 1); Y1 <- getY(dat ,1)
 # Random intercept and slope - 
 
 b.ll <- function(b.hat, Y, X, Z, n, D, var.e, beta){
-  V <- solve(getV(D, Z, var.e, n))
+  V <- getV(D, Z, var.e, n)
   bi <- matrix(c(b.hat[1], b.hat[2]), nc = 1)
   -n/2 * log(2 * pi) - n/2 * log(det(V)) - 1/2 * 
     t(Y - X %*% beta - Z %*% bi) %*% solve(V) %*% (Y - X %*% beta - Z %*% bi)
+}
+
+getd2 = function(Z, D, var.e){ # Calculate 2nd derivative of f(y|..., theta)
+  ni <- nrow(Z)
+  V <- solve(getV(D, Z, var.e, ni))
+  -(0.5 * t(Z) %*% V %*% Z + 0.5 * t(V %*% Z) %*% Z)
 }
 
 optim.b <- function(b0, Y, X, Z, n, D, var.e, beta){
@@ -131,22 +137,32 @@ for(i in 1:100){
   op <- optim.b(c(0,0), Yi, Xi, Zi, ni, D, var.e, beta)
   b1[i] <- op$par[1]; b2[i] <- op$par[2]
 }
+# Quick plot to show how iteration zero shapes b
+par(mfrow=c(2,1))
+plot(b1, b.int.inits); lines(-10:10,-10:10) 
+plot(b2, b.slp.inits); lines(-10:10,-10:10) 
+par(mfrow=c(1,1))
 
-optim.b(c(0,0), Y1, X1, Z1, nrow(Z1), D, var.e, beta)
+getd1 <- function(X,Y,Z,D,var.e,beta,ni,b.hat){
+  V <- solve(getV(D, Z, var.e, ni))
+  temp <- Y - X%*% beta - Z %*% b.hat
+  0.5 * t(Z) %*% V %*% temp + 0.5 * t(Z) %*% t(V) %*% temp
+}
 
-
-for(i in 1:nrow(b)){
-  Yi <- getY(dat, i); Xi <- getX(dat, i); Zi <- getZ(dat,i); ni <- nrow(Zi)
-  op <- optim.b(c(0, 0, 1), Yi, Xi, Zi, beta, 1, ni)
-  b1[i] <- op$par[1]
-  b2[i] <- op$par[2]
-  d1[i] <- op$par[3]
+test <- list()
+for(i in 1:100){
+  print(i)
+  Xi <- getX(dat, i); Yi <- getY(dat, i); Zi <- getZ(dat, i)
+  ni <-  nrow(Zi)
+  
+  sigmai = solve(tcrossprod(getd1(Xi,Yi,Zi,D,var.e,beta,ni,b.hat[,i])))
+  test[[i]] <- sigmai + tcrossprod(b.hat[,i] - B.mn)
 }
 
 
 em.bern <- function(data,
-                    beta.init, var.0.init, var.1.init,
-                    b.init,
+                    beta.init, var.0.init, 
+                    D.init = NULL, b.init = NULL,
                     tol = 1e-3, maxiter = 200,
                     logLik = T){
   
@@ -155,9 +171,6 @@ em.bern <- function(data,
   # Data-specific
   uids <- unique(data$id)
   n <- length(uids)
-  ni <- nrow(data)/n
-  Zi <- matrix(rep(1, ni), nc = 1) # We can cheat a little with Zi and ni as no missingness!
-  
   
   # Sort parameter estimates out and intialise the parameter vector
   beta <- beta.init;
@@ -165,78 +178,83 @@ em.bern <- function(data,
     beta <- matrix(beta, nc = 1)
   }
   
-  var.0 <- var.0.init; var.1 <- var.1.init
+  var.0 <- var.0.init; 
+  # Initial D-matrix
+  if(is.null(D.init)) D <- diag(2) else D <- D.init
+  if(!isSymmetric(D) | dim(D)[1] != dim(D)[2]) stop("D must be symmetric square matrix")
   
-  b0 <- b.init
-  sigma0 <- rep(1, length(uids))
-  B <- sum(b0)/n
+  if(is.null(b.init)) b0 <- matrix(rep(0, n * 2), nr = 2) else b0 <- b.init
   
-  params <- c(t(beta), var.0, B, var.1)
+  B <- rowMeans(b0)
+  
+  params <- c(t(beta), var.0, as.vector(B), as.vector(D))
   
   # Begin while loop
   t0 <- proc.time()[3]
   while(diff > tol & iter <= maxiter){
     # E-step ----
-    b.hat <- sigma.hat <- D.cont <- c()
+    b1 <- b2 <- c()
     for(i in uids){
-      start.val <- c(b0[i], sigma0[i])
-      Yi <- getY(dat, i)
-      Xi <- getX(dat, i)
-      op <- optim.b(start.val, Yi, Xi, Zi, beta, ni)
-      b.hat[i] <- op$par[1]
-      sigma.hat[i] <- op$par[2]
+      Yi <- getY(data, i); Xi <- getX(data, i); Zi <- getZ(data, i)
+      ni <- nrow(Zi)
+      op <- optim.b(b0[,i], Yi, Xi, Zi, ni, D, var.0, beta)
+      b1[i] <- op$par[1]; b2[i] <- op$par[2]
     }
+    b.hat <- rbind(b1, b2)
     
-    # Rest of E-step, calculating E[eiei^T] to obtain var.0.new
+    # Rest of E-step, calculating E[eiei^T] 
     e <- nis <- c()
     for(i in uids){
-      ni <- nrow(Zi); nis[i] <- ni
-      V <- solve(getV(var.1, Zi, var.0, ni))
+      Zi <- getZ(data, i); ni <- nrow(Zi)
+      V <- solve(getV(D, Zi ,var.0, ni))
       residi <- getResid(data, i, beta)
       
       e[i] <- tr(
         c(var.0)^2 * V %*% tcrossprod(residi) %*% V + c(var.0) * (diag(ni) - c(var.0) * V)
       )
+      nis[i] <- ni
     }
-    
     # M step ----
+    
     # CM step 1
-    # Updates for B and var.1
-    B.new <- sum(b.hat)/n
-    for(i in 1:length(b.hat)){
-      #D.cont[i] <- sigma.hat[i] + tcrossprod(b.hat[i]-B.new)
-      #D.cont[i] <- var(b.hat) + tcrossprod(b.hat[i]-B.new)
-      #D.cont[i] <- 1/sigma.hat[i] * crossprod(Zi) + tcrossprod(b.hat[i] - B.new)
-      D.cont[i] <- solve(1/sigma.hat[i] * crossprod(Zi) * -1) + tcrossprod(b.hat[i] - B.new)
+    # Updates for B and D
+    B.new <- rowMeans(b.hat)
+    
+    D.store <- list()
+    for(i in uids){
+      Zi <- getZ(data, i); ni <- nrow(Zi)
+      sigmai <- solve(-1 * getd2(Zi, D, var.0))
+      # D.store[[i]] <- sigmai + tcrossprod(b.hat[,i] - B.new)
+      D.store[[i]] <- tcrossprod(b.hat[,i]-B.new)
     }
-    var.1.new <- sum(D.cont)/n
-    var.0.new <- sum(e)/sum(nis)
+    D.new <- Reduce('+', D.store)/n ; 
+    var.0.new <- sum(e)/sum(nis);
     
     # CM step 2
     beta.p1 <- beta.p2 <- list()
     for(i in uids){
-      ni <- nrow(Zi)
-      Yi <- getY(dat, i); Xi <- getX(dat, i);
-      V <- solve(getV(var.1.new, Zi, var.0.new, ni))
+      Zi <- getZ(data, i); ni <- nrow(Zi)
+      Yi <- getY(data, i); Xi <- getX(data, i);
+      V <- solve(getV(D.new, Zi, var.0.new, ni))
       beta.p1[[i]] <- t(Xi) %*% V %*% Xi
       beta.p2[[i]] <- t(Xi) %*% V %*% Yi
     }
     
     beta.new <- solve(Reduce('+', beta.p1)) %*% Reduce('+', beta.p2)
-    
     # Collecting parameters and finding max absolute difference
-    params.new <- c(t(beta.new), var.0.new, B.new, var.1.new)
+    params.new <- c(t(beta.new), var.0.new, B.new, as.vector(D.new))
     diffs <- abs(params-params.new)
     diff <- max(diffs)
+    
+    print(rbind(params,params.new))
     message("Iteration ", iter, " max difference: ", diff)
     
     # Set next parameter values
     beta <- beta.new
     var.0 <- var.0.new
-    var.1 <- var.1.new
+    D <- D.new
     B <- B.new
     b0 <- b.hat
-    sigma0 <- sigma.hat
     params <- params.new
     
     iter <- iter + 1
@@ -246,27 +264,29 @@ em.bern <- function(data,
   message("EM Complete after ", iter, " iterations, this took ", round(t1-t0, 2), " seconds.")
   
   message("\nStarting post-hoc calculations of REs")
-  REs <- c()
+  REs <- matrix(NA, nc = 2, nr = n)
   for(i in uids){
-    V <- solve(getV(var.1, Zi, var.0, ni))
+    Zi <- getZ(data, i); ni <- nrow(Zi)
+    V <- solve(getV(D, Zi, var.0, ni))
     residi <- getResid(data, i, beta)
-    REs[i] <- t(var.1 * Zi) %*% V %*% residi
+    REs[i,] <- t(Zi %*% D) %*% V %*% residi
   }
   message("done")
   
   if(logLik){
-    message("\nCalculating log-likelihood")
+    message("\nCalculating log-likelihood at final parameter values\n")
     ll.temp <- c()
     for(i in uids){
+      Zi <- getZ(data, i); ni <- nrow(Zi)
       Yi <- getY(data, i)
       Xi <- getX(data, i)
-      ll.temp[i] <-  ll(Xi, Yi, Zi, beta, var.0, var.1, ni)
+      ll.temp[i] <-  ll(Xi, Yi, Zi, beta, var.0, D, ni)
     }
-    message("done")
+    message("Log-likelihood calculated")
   }
   
   rtn <- list(
-    beta = beta, var.0 = var.0, var.1 = var.1, B = B, last.b = b.hat,
+    beta = beta, var.0 = var.0, D = D, B = B, last.b = b.hat,
     REs = REs, iter = iter, time=t1-t0
   )
   if(logLik) rtn <- c(rtn, logLik = sum(ll.temp))
@@ -277,8 +297,18 @@ em.bern <- function(data,
 # Do some comparison with lmer...
 test <- em.bern(data = dat,
                 beta.init = beta, 
-                var.0.init = 1, var.1.init = 1, b.init = rep(0,250), tol = 1e-5)
-plot(test$REs, ranef(x$lmer.fit)$id$`(Intercept)`); lines(-1:1,-1:1) # This is probably expected
+                var.0.init = 1, D.init = NULL, 
+                b.init = matrix(c(b.int.inits, b.slp.inits), nr = 2), tol = 1e-3)
+
+
+par(mfrow=c(2,1))
+plot(test$REs[, 1], ranef(x$lmer.fit)$id$`(Intercept)`); 
+lines(-10:10,-10:10) # This is probably expected
+plot(test$REs[, 2], ranef(x$lmer.fit)$id$time); lines(-10:10, -10:10)
+par(mfrow=c(1,1))
 sqrt(test$var.0) # target: 1.5
-sqrt(test$var.1) # target: 0.5
+sqrt(as.vector(diag(test$D))) # Target: 2.5, 1.5
 summary(x$lmer.fit)$logLik; test$logLik # Broadly good agreement.
+
+
+
