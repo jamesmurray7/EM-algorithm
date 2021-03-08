@@ -51,15 +51,19 @@ simlong <- function(num_subj = 250, num_times = 5,
   )
 }
 
+# Initial conditions from the simulated data
 x <- simlong(100,5, Sigma = SigmaGen(2.5, 1.5))
 dat <- x$long.data
 beta <- lm(Y~x1+x2,dat)$coef
 b.int.inits <- ranef(x$lmer.fit)$id$`(Intercept)`
 b.slp.inits <- ranef(x$lmer.fit)$id$`time`
 b.inits <- cbind(b.int.inits, b.slp.inits)
+var.e <- 1.5
+D <- SigmaGen(2.5,1.5)
+
 
 # Setting out useful functions --------------------------------------------
-getV <- function(D, Z, var.0, ni) t(Z) %*% D %*% Z + c(var.0) * diag(ni) # ni = nrow(getZ(dat, idx))
+getV <- function(D, Z, var.0, ni) Z %*% D %*% t(Z) + c(var.0) * diag(ni) # ni = nrow(getZ(dat, idx))
 
 getResid <- function(data=dat, idx, beta){
   i.dat <- subset(data, id == idx)
@@ -100,52 +104,37 @@ ll <- function(X, Y, Z, beta, var.0, D, ni){
 
 # Dummy turn
 Z1 <- getZ(dat, 1); X1 <- getX(dat, 1); Y1 <- getY(dat ,1)
-b1 <- b.inits[1,]
 
 # Maximisation function and its wrapper
 # Random intercept and slope - 
 
-b.ll <- function(b, bi, Y, X, beta, Z, var.e, n){ 
-  # Just the square D matrix?
-  D <- matrix(c(b[3], 0, 0, b[4]), 2, 2)
-  V <- Z %*% D %*% t(Z) + var.e * diag(n)
-  Sigma <- D - D %*% t(Z) %*% solve(V) %*% Z1 %*% D
-  mu.b <- D %*% t(Z) %*% solve(V) %*% (Y - X %*% beta)
-  
-  -n/2 * log(2 * pi) -n/2 * log(det(Sigma)) + 
-    t(c(b[1]-b[2]) - mu.b) %*% solve(Sigma) %*% (c(b[1],b[2]) - mu.b)
-  
-  # Say b0 and b1 are iid so off-diagonals just zero.
-  #sigma <- Z %*% diag(c(b[3], b[4])) %*% t(Z) + var.e * diag(n)
-  #sigma <- b[3]
-  
-  #-n/2 * log(2 * pi) - n/2 * log(det(sigma)) - 1/2 * t(Y - X %*% beta - Z %*% b[1:2]) %*% solve(sigma) %*% (Y-X %*% beta-Z %*% b[1:2])
+b.ll <- function(b.hat, Y, X, Z, n, D, var.e, beta){
+  V <- solve(getV(D, Z, var.e, n))
+  bi <- matrix(c(b.hat[1], b.hat[2]), nc = 1)
+  -n/2 * log(2 * pi) - n/2 * log(det(V)) - 1/2 * 
+    t(Y - X %*% beta - Z %*% bi) %*% solve(V) %*% (Y - X %*% beta - Z %*% bi)
 }
 
-mu.b <- matrix(NA, nr = nrow(b.inits), nc = 2)
-d00 <- d11 <- c()
-for(i in 1:nrow(b.inits)){
-  Zi <- getZ(dat, i); Yi <- getY(dat, i); Xi <- getX(dat, i)
-  op <- optim(c(1,1,1,1), b.ll, NULL, 
-              b.inits[i,], Yi, Xi, beta, Zi, var.e, nrow(Zi),
-              control = list(fnscale=-1),
-              method = "L-",
-              lower = c(-5, -5, 1e-3, 1e-3),
-              upper = c(5, 5, 2, 2))
-  mu.b[i,] <- op$par[1:2]
-  d00[i] <- op$par[3]; d11[i] <- op$par[4]
-}
-
-optim.b <- function(b0, Y, X, Z, beta, var.e, n){
-  op <- optim(b0, b.ll, NULL, Y, X, Z, beta, var.e, n, 
+optim.b <- function(b0, Y, X, Z, n, D, var.e, beta){
+  op <- optim(b0, b.ll, NULL, Y, X, Z, n, D, var.e, beta, 
               control = list(fnscale = -1),
               method = "L-BFG",
-              lower = c(-5,-5, 0.01),
-              upper = c(5, 5, Inf))
+              lower = c(-Inf,-Inf),
+              upper = c(Inf, Inf))
   op
 }
 
-b1 <- b2 <- d1 <- d2 <- c()
+b1 <- b2 <- c() # This looks quite promising!
+for(i in 1:100){
+  Yi <- getY(dat, i); Xi <- getX(dat, i); Zi <- getZ(dat, i)
+  ni <- nrow(Zi)
+  op <- optim.b(c(0,0), Yi, Xi, Zi, ni, D, var.e, beta)
+  b1[i] <- op$par[1]; b2[i] <- op$par[2]
+}
+
+optim.b(c(0,0), Y1, X1, Z1, nrow(Z1), D, var.e, beta)
+
+
 for(i in 1:nrow(b)){
   Yi <- getY(dat, i); Xi <- getX(dat, i); Zi <- getZ(dat,i); ni <- nrow(Zi)
   op <- optim.b(c(0, 0, 1), Yi, Xi, Zi, beta, 1, ni)
