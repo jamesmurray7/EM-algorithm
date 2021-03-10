@@ -1,5 +1,5 @@
 #' ###############
-#' "Classic" EM
+#' Expectation conditional-maximisation
 #' ###############
 
 # Helper functions
