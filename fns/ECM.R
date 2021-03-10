@@ -91,7 +91,7 @@ ecm <- function(data, beta.init, var.0.init, D.init,
     if(history) iter.hist <- rbind(iter.hist, c(iter, t(params.new)))
   }
   t1 <- proc.time()[3]
-  message("EM Complete after ", iter, " iterations, this took ", round(t1-t0,2), " seconds.")
+  message("ECM Complete after ", iter, " iterations, this took ", round(t1-t0,2), " seconds.")
   
   message("\nStarting post-hoc calculations of REs")
   REs <- c()
