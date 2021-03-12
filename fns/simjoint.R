@@ -17,7 +17,7 @@ SigmaGen <- function(int.sd, slp.sd){
 simjoint <- function(num_subj = 100, num_times = 6,
                      sigma.epsilon = 1.5, D = SigmaGen(3, 1), 
                      gamma = 1, 
-                     theta = c(-3, 1), censoring = T, censrate = exp(-3)){
+                     theta = c(-5, 1), censoring = T, censrate = exp(-3)){
   
   N <- num_subj * num_times
   # Set up time and id
@@ -59,7 +59,7 @@ simjoint <- function(num_subj = 100, num_times = 6,
   )
   
   jd <- dplyr::left_join(long.data, surv.data, "id")
-  jd2 <- jd[jd$time < jd$survtime,]
+  jd2 <- jd[jd$time <= jd$survtime,]
   
   message(round(sum(status)/num_subj * 100, 2), "% experienced event")
   
