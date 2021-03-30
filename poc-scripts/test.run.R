@@ -17,6 +17,7 @@ bh <- basehaz(surv.fit)
 cphd <- coxph.detail(surv.fit)
 bh <- dplyr::left_join(bh, data.frame(time = cphd$time, haz.cont = cphd$hazard), "time")
 bh[is.na(bh$haz.cont),3] <- 0
+bh <- bh[,-1]
 l0 <- bh$haz.cont; Tis <- bh$time; rm(cphd)
 # Re-ordering data, get ids
 dat.ord <- dat[order(dat$survtime),]
@@ -72,7 +73,8 @@ for(i in uids){
       
       # Collect quadrature points
       b.abs.store[p,] <- b.abs
-      bb2.store[p,] <- cbind(t(b.abs^2), t(b.abs)[,1] * t(b.abs)[,2])
+      b.abs2 <- b.abs^2
+      bb2.store[p,] <- cbind(t(b.abs2), b.abs[1] * b.abs[2])
       
       # f(T_i,\Delta_i|b_i,Omega)
       expbtD <- 1 # f part, unity if censored
@@ -156,20 +158,25 @@ vech <- function(x) x[lower.tri(x, diag = T)]
 
 jm <- function(data,
                b.init = NULL, D.init = NULL, var.e.init = 1, gamma.init = 0,
-               bh, sf,
+               cph = NULL,
                tol = 1e-3, maxiter = 200){
+  
   diff <- 100; iter <- 1
   # Data-specific
   uids <- unique(data$id); n <- length(uids)
-  Tis <- bh$time # Distinct failure times
-  Deltas <- dplyr::distinct(data, id, survtime, status)$status
-  # sf
-  if(!"summary.survfit"%in%class(sf)){
-    if(!"survfitcox"%in%class(sf)) stop("argument `sf` must be survift(coxph), or its summary") else sf <- summary(sf)
-  } 
-  nf <- length(sf$time) # num fails
-  Zif <- cbind(1, sf$time); Zift <- t(Zif)
   
+  # coxph and survival-specific stuff
+  if(is.null(cph)) stop("Please provide coxph fit for `cph`")
+  sf <- summary(survfit(cph))
+  Zif <- cbind(1, sf$time); Zift <- t(Zif)
+  nf <- length(sf$time)# num fails
+  bh <- basehaz(cph)
+  cphd <- coxph.detail(cph)
+  bh <- dplyr::left_join(bh, data.frame(time = cphd$time, haz.cont = cphd$hazard), "time")
+  bh[is.na(bh$haz.cont),3] <- 0
+  l0 <- bh$haz.cont; Tis <- bh$time; rm(cphd)
+  Deltas <- dplyr::distinct(data, id, survtime, status)$status
+
   # Initial parameter estimates //
   # D
   if(is.null(D.init)) D <- diag(1,2) else D <- D.init
@@ -187,6 +194,7 @@ jm <- function(data,
   var.e <- var.e.init
   # Set-up parameter vector
   params <- c(gamma, vech(D), var.e)
+  names(params) <- c("gamma", "D11", "D21", "D22", "var.eps")
   
   # Quadrature - this doesn't change between iterations 
   gh <- statmod::gauss.quad.prob(2, 
@@ -199,8 +207,7 @@ jm <- function(data,
   while(diff > tol & iter < maxiter){
     # Begin loop over subjects ----
     # Initialise empty lists
-    Efti.mat <- matrix(NA, nr = n, nc = nf)
-    Ebi <- EbibiT <- Ebi2 <- Eexpbu <- Ebexpbu <- Ebbexpbu <- list()
+    Ebi <- Ebi2 <- Eexpbu <- Ebexpbu <- Ebbexpbu <- list()
     for(i in uids){
       i.dat <- subset(data, id == i)
       # Data specific //
@@ -219,69 +226,65 @@ jm <- function(data,
       bzi <- W$W21 %*% solve(W$W11) %*% residi
       # loop over m absicca an weights
       # Set up empty matrices and vectors
-      fti <- c()
-      fti.store <- matrix(NA, nr = 4, nc = nf)
+      fti.store <- c()
       b.abs.store <- matrix(NA, nr = 4, nc = 2)
       bb2.store <- matrix(NA, nr = 4, nc = 3)
-      expbu.store <- matrix(NA, nr = 4, nc = length(idx.sf))
-      bexpbu.store <- bbexpbu.store <- expbu2.store <- expbu.store
+      expbu.store <- matrix(NA, nr = 4, nc = nrow(Zis))
+      bexpbu.store <- b.abs.store
+      bbexpbu.store <- bb2.store
       p <- 1
       for(ii in 1:2){ # Loop over m GPT quadrature points, taking the expectations we need...
         for(jj in 1:2){
           G <- matrix(c(ab[ii],ab[jj]), nc = 1)
           b.abs <- Wzi %*% G + bzi
           ww <- w[ii] * w[jj]
-          # Integral of all survival times' contribution up to this subject's
-          temp <- c()
-          for(k in 1:idx){ 
-            temp[k] <- l0[k] * exp(cbind(1, Tis[k]) %*% b.abs)
-          }
-          intpart <- sum(temp)
           
-          # E[\gamma(b_0 + b_1iu)] used in hazard and 
-          # E[(b_0 + b_1u) * exp{\gamma(b_0 + b_1u)}] used in \gamma update.
-          if(length(idx.sf) > 0){
-            for(k in 1:length(idx.sf)){ 
-              expbu.store[p,k] <- exp(gamma * Zisf[k,] %*% b.abs)
-              bexpbu.store[p,k] <- Zisf[k,] %*% b.abs %*% exp(gamma * Zisf[k,] %*% b.abs)
-              bbexpbu.store[p,k] <- tcrossprod(Zisf[k,] %*% b.abs) %*% exp(gamma * Zisf[k, ] %*% b.abs)
-            }
-          }
-          
-          # f(T_i|b_i) - Work out 4x 
-          temp <- c()
-          for(k in 1:nf){
-            temp[k] <- exp(Zif[k, ] %*% b.abs + (Di * cbind(1, Ti) %*% b.abs) - intpart) * ww
-          }
-          
-          fti.store[p,] <- temp
+          # Collect quadrature points
           b.abs.store[p,] <- b.abs
-          bb2.store[p,] <- cbind(t(b.abs^2), t(b.abs)[,1] * t(b.abs)[,2]) # bibiT and b0b1 cross-multiplied, used in sigma update
+          b.abs2 <- b.abs^2
+          bb2.store[p,] <- cbind(t(b.abs2), b.abs[1] * b.abs[2])
+          
+          # f(T_i,\Delta_i|b_i,Omega)
+          expbtD <- 1 # f part, unity if censored
+          if(Di == 1) expbtD <- l0[idx] * exp(gamma * cbind(1, Ti) %*% b.abs)
+          expSt <- exp(l0[1:idx] %*% -exp(gamma * Zis %*% b.abs)) # Survival function
+          fti.store[p] <- expbtD * expSt * ww
+          
+          # exp(b0+b1u)
+          expbu.store[p,] <- exp(gamma * Zis %*% b.abs) # `C` in Pete's code
+          # (b0 + b1u) * exp(b0+b1u)
+          bexpbu.store[p,1:2] <- colSums(
+            exp(gamma * Zis %*% b.abs) %*% t(b.abs) * Zis * cbind(l0[1:idx], l0[1:idx])
+          )
+          # (b0 + b1u) * (b0 + b1u) * exp(b0 + b1u) = 
+          bbexpbu.store[p,1:2] <- colSums(
+            exp(gamma * Zis %*% b.abs) %*% t(b.abs2) * Zis^2 * cbind(l0[1:idx], l0[1:idx])
+          )
+          bbexpbu.store[p,3] <- 2 * colSums(
+            exp(gamma * Zis %*% b.abs) %*% bb2.store[p,3] * Zis[,2] * cbind(l0[1:idx])
+          )
+          
           p <- p + 1
         }
       }
-      fti <- rowMeans(fti.store)
-      denom <- sum(fti)
-      Efti.mat[i,] <- t(fti) %*% fti.store / denom #colMeans(fti.store) / denom
       
-      # Expectations ----
-      # E[b]
-      Ebi[[i]] <- t(fti) %*% b.abs.store / denom
-      # E[bi^2] and E[b0b1]
-      Ebi2[[i]] <- t(fti) %*% bb2.store / denom
+      denom <- sum(fti.store)
+      # Take expectations ----
+      # E[b], E[b^2], E[b0b1]
+      Ebi[[i]] <- crossprod(fti.store, b.abs.store) / denom
+      Ebi2[[i]] <- crossprod(fti.store, bb2.store) / denom
       # E[exp(\gamma(b0 + b1u))]
-      Eexpbu[[i]] <- t(fti) %*% expbu.store / denom
+      Eexpbu[[i]] <- crossprod(fti.store, expbu.store) / denom
       # E[(b0 + b1u)exp(\gamma(b0+b1u))]
-      Ebexpbu[[i]] <- t(fti) %*% bexpbu.store / denom
+      Ebexpbu[[i]] <- crossprod(fti.store, bexpbu.store) / denom
       # E[(b0 + b1u)(b0 + b1u)exp(\gamma(b0+b1u))]
-      Ebbexpbu[[i]] <- t(fti) %*% bbexpbu.store / denom
+      Ebbexpbu[[i]] <- crossprod(fti.store, bbexpbu.store) / denom
     }
+    # Exit loop and M-step ...
     
     Ebi.mat <- matrix(unlist(Ebi), nr = n, nc = 2, byrow = T)
     Ebi2.mat <- matrix(unlist(Ebi2), nr = n, nc = 3, byrow = T)
-    
-    # M-step ----
-    # Update for D and var.epsilon ...
+    # Update for D and var.epsilon
     D.cont <- list()
     mi <- c(); e <- c()
     for(i in uids){
@@ -301,12 +304,15 @@ jm <- function(data,
     D.new <- Reduce('+', D.cont)/n
     var.e.new <- (sum(e)/sum(mi))
     
-    bh.new <- lambdaUpdate(data, bh, sf, Eexpbu)
-    bh.new <- cbind(cumsum(bh.new[,1]), bh.new[,2])
+    # Update for lambda
+    bh.new <- lambdaUpdate(data, bh = bh, sf = sf, Eexpbu = Eexpbu)
+    l0.new <- bh.new$haz.cont
     
-    gamma.new <- gammaUpdate(dat.ord, sf, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)
+    # Update for gamma
+    gamma.new <- gammaUpdate(data, sf, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)
     
-    params.new <- c(gamma.new, vech(D.new), var.e.new)
+    # Collate parameters.
+    params.new <- c(gamma.new, vech(D.new), var.e.new);
     diffs <- abs(params.new - params)
     diff <- max(diffs)
     print(sapply(params, round, 4))
@@ -314,11 +320,11 @@ jm <- function(data,
     message("Iteration ", iter, " max difference ", diff)
     
     # Set new parameters
-    params <- params.new
+    names(params.new) <- names(params); params <- params.new
     D <- D.new
     var.e <- var.e.new
     b <- t(Ebi.mat)
-    bh <- bh.new; l0 <- bh.new[,1]
+    bh <- bh.new; l0 <- l0.new
     gamma <- gamma.new
     iter <- iter+1
   }
@@ -326,8 +332,6 @@ jm <- function(data,
 }
 
 surv.fit <- coxph(Surv(survtime, status) ~ Y, dat.ord[dat.ord$time == floor(dat.ord$survtime),])
-bh <- basehaz(surv.fit)
-sf <- survfit(surv.fit)
 
-jm(data = dat.ord,
-   D.init = SigmaGen(1, 0.5), bh = bh, sf = sf)
+jm(data = dat.ord, D.init = SigmaGen(1,1), var.e.init = 1, gamma.init = 0, cph = surv.fit)
+
