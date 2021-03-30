@@ -38,8 +38,7 @@ w <- gh$weights * sqrt(pi)
 
 # Begin loop over subjects ----
 # Initialise empty lists
-Efti.mat <- matrix(NA, nr = n, nc = nf)
-Ebi <- EbibiT <- Ebi2 <- Eexpbu <- Ebexpbu <- Ebbexpbu <- list()
+Ebi <- Ebi2 <- Eexpbu <- Ebexpbu <- Ebbexpbu <- list()
 for(i in uids){
   i.dat <- subset(dat, id == i)
   # Data specific //
@@ -59,11 +58,11 @@ for(i in uids){
   # loop over m absicca an weights
   # Set up empty matrices and vectors
   fti.store <- c()
-  #fti.store <- matrix(NA, nr = 4, nc = nf)
   b.abs.store <- matrix(NA, nr = 4, nc = 2)
   bb2.store <- matrix(NA, nr = 4, nc = 3)
   expbu.store <- matrix(NA, nr = 4, nc = nrow(Zis))
-  bexpbu.store <- bbexpbu.store <- expbu2.store <- expbu.store
+  bexpbu.store <- b.abs.store
+  bbexpbu.store <- bb2.store
   p <- 1
   for(ii in 1:2){ # Loop over m GPT quadrature points, taking the expectations we need...
     for(jj in 1:2){
@@ -85,11 +84,15 @@ for(i in uids){
       expbu.store[p,] <- exp(gamma * Zis %*% b.abs) # `C` in Pete's code
       # (b0 + b1u) * exp(b0+b1u)
       bexpbu.store[p,1:2] <- colSums(
-        tcrossprod(Zis %*% b.abs, exp(gamma * Zis %*% b.abs)) %*% Zis * cbind(l0[1:idx], l0[1:idx])
+        exp(gamma * Zis %*% b.abs) %*% t(b.abs) * Zis * cbind(l0[1:idx], l0[1:idx])
       )
-      # (b0 + b1u) * (b0 + b1u) * exp(b0 + b1u)
-      bbexpbu.store[p,] <- crossprod(Zis %*% bb2.store[,1:2], exp(gamma * Zis %*% b.abs) %*% l0[1:idx])
-      
+      # (b0 + b1u) * (b0 + b1u) * exp(b0 + b1u) = 
+      bbexpbu.store[p,1:2] <- colSums(
+        exp(gamma * Zis %*% b.abs) %*% t(b.abs2) * Zis^2 * cbind(l0[1:idx], l0[1:idx])
+      )
+      bbexpbu.store[p,3] <- 2 * colSums(
+        exp(gamma * Zis %*% b.abs) %*% bb2.store[p,3] * Zis[,2] * cbind(l0[1:idx])
+      )
       
       p <- p + 1
     }
