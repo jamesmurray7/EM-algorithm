@@ -56,11 +56,11 @@ for(i in uids){
   bzi <- W$W21 %*% solve(W$W11) %*% residi
   # loop over m absicca an weights
   # Set up empty matrices and vectors
-  fti <- c()
-  fti.store <- matrix(NA, nr = 4, nc = nf)
+  fti.store <- c()
+  #fti.store <- matrix(NA, nr = 4, nc = nf)
   b.abs.store <- matrix(NA, nr = 4, nc = 2)
   bb2.store <- matrix(NA, nr = 4, nc = 3)
-  expbu.store <- matrix(NA, nr = 4, nc = length(idx.sf))
+  expbu.store <- matrix(NA, nr = 4, nc = nrow(Zis))
   bexpbu.store <- bbexpbu.store <- expbu2.store <- expbu.store
   p <- 1
   for(ii in 1:2){ # Loop over m GPT quadrature points, taking the expectations we need...
@@ -68,55 +68,43 @@ for(i in uids){
       G <- matrix(c(ab[ii],ab[jj]), nc = 1)
       b.abs <- Wzi %*% G + bzi
       ww <- w[ii] * w[jj]
-      # Integral of all survival times' contribution up to this subject's
-      temp <- c()
-      for(k in 1:idx){ # issue lies here.
-        temp[k] <- l0[k] * exp(gamma * cbind(1, Tis[k]) %*% b.abs)
-      }
-      intpart <- sum(temp)
       
-      # E[\gamma(b_0 + b_1iu)] used in hazard and 
-      # E[(b_0 + b_1u) * exp{\gamma(b_0 + b_1u)}] used in \gamma update.
-      if(length(idx.sf) > 0){
-        for(k in 1:length(idx.sf)){ 
-          expbu.store[p,k] <- exp(gamma * Zisf[k,] %*% b.abs)
-          bexpbu.store[p,k] <- Zisf[k,] %*% b.abs %*% exp(gamma * Zisf[k,] %*% b.abs)
-          bbexpbu.store[p,k] <- tcrossprod(Zisf[k,] %*% b.abs) %*% exp(gamma * Zisf[k, ] %*% b.abs)
-        }
-      }
-      
-      # f(T_i|b_i) - Work out 4x 
-      temp <- c()
-      for(k in 1:nf){
-        temp[k] <- exp(gamma * Zif[k, ] %*% b.abs + (Di * gamma * cbind(1, Ti) %*% b.abs) - intpart) * ww
-      }
-      
-      # fti[[p]] <- exp(Zi %*% b.abs + rep(cbind(1, Ti) %*% b.abs, nrow(Zi)) - rep(intpart, nrow(Zi))) * ww
-      # fti[p] <- exp(mean(Zi %*% b.abs) + (Di * cbind(1, Ti) %*% b.abs) - intpart) * ww
-      # fti[p] <- rowMeans(temp)
-      fti.store[p,] <- temp
+      # Collect quadrature points
       b.abs.store[p,] <- b.abs
-      bb2.store[p,] <- cbind(t(b.abs^2), t(b.abs)[,1] * t(b.abs)[,2]) # bibiT and b0b1 cross-multiplied, used in sigma update
+      bb2.store[p,] <- cbind(t(b.abs^2), t(b.abs)[,1] * t(b.abs)[,2])
+      
+      # f(T_i,\Delta_i|b_i,Omega)
+      expbtD <- 1 # f part, unity if censored
+      if(Di == 1) expbtD <- l0[idx] * exp(gamma * cbind(1, Ti) %*% b.abs)
+      expSt <- exp(l0[1:idx] %*% -exp(gamma * Zis %*% b.abs)) # Survival function
+      fti.store[p] <- expbtD * expSt * ww
+      
+      # exp(b0+b1u)
+      expbu.store[p,] <- exp(gamma * Zis %*% b.abs) # `C` in Pete's code
+      # (b0 + b1u) * exp(b0+b1u)
+      bexpbu.store[p,1:2] <- colSums(
+        tcrossprod(Zis %*% b.abs, exp(gamma * Zis %*% b.abs)) %*% Zis * cbind(l0[1:idx], l0[1:idx])
+      )
+      # (b0 + b1u) * (b0 + b1u) * exp(b0 + b1u)
+      bbexpbu.store[p,] <- crossprod(Zis %*% bb2.store[,1:2], exp(gamma * Zis %*% b.abs) %*% l0[1:idx])
+      
+      
       p <- p + 1
     }
   }
-  fti <- rowSums(fti.store)
-  denom <- sum(fti)
-  Efti.mat[i,] <- t(fti) %*% fti.store / denom #colMeans(fti.store) / denom
   
-  # Expectations ----
-  # E[b]
-  Ebi[[i]] <- t(fti) %*% b.abs.store / denom
-  # E[bi^2] and E[b0b1]
-  Ebi2[[i]] <- t(fti) %*% bb2.store / denom
+  denom <- sum(fti.store)
+  # Take expectations ----
+  # E[b], E[b^2], E[b0b1]
+  Ebi[[i]] <- crossprod(fti.store, b.abs.store) / denom
+  Ebi2[[i]] <- crossprod(fti.store, bb2.store) / denom
   # E[exp(\gamma(b0 + b1u))]
-  Eexpbu[[i]] <- t(fti) %*% expbu.store / denom
+  Eexpbu[[i]] <- crossprod(fti.store, expbu.store) / denom
   # E[(b0 + b1u)exp(\gamma(b0+b1u))]
-  Ebexpbu[[i]] <- t(fti) %*% bexpbu.store / denom
+  Ebexpbu[[i]] <- crossprod(fti.store, bexpbu.store) / denom
   # E[(b0 + b1u)(b0 + b1u)exp(\gamma(b0+b1u))]
-  Ebbexpbu[[i]] <- t(fti) %*% bbexpbu.store / denom
+  Ebbexpbu[[i]] <- crossprod(fti.store, bbexpbu.store) / denom
 }
-
 # Exit loop and M-step ...
 
 Ebi.mat <- matrix(unlist(Ebi), nr = n, nc = 2, byrow = T)
