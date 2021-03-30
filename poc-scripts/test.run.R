@@ -14,8 +14,10 @@ sf <- summary(survfit(surv.fit))
 Zif <- cbind(1, sf$time); Zift <- t(Zif)
 nf <- length(sf$time)# num fails
 bh <- basehaz(surv.fit)
-Tis <- bh$time # ordered times
-l0 <- bh$hazard # intial baseline hazard lambda0... 
+cphd <- coxph.detail(surv.fit)
+bh <- dplyr::left_join(bh, data.frame(time = cphd$time, haz.cont = cphd$hazard), "time")
+bh[is.na(bh$haz.cont),3] <- 0
+l0 <- bh$haz.cont; Tis <- bh$time; rm(cphd)
 # Re-ordering data, get ids
 dat.ord <- dat[order(dat$survtime),]
 uids <- unique(dat.ord$id); n <- length(uids)
