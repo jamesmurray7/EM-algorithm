@@ -4,16 +4,16 @@
 
 lambdaUpdate <- function(data, bh, sf, Eexpbu){
   if(class(sf) != "summary.survfit") stop("sf needs to be summary(sf), change later")
-  bh.new <- bh 
+  bh.new <- bh[,2:3] 
   # Censored observations have zero point-mass.
-  censored <- which(!bh.new[,2]%in%sf$time)
-  bh.new[censored,1] <- 0
+  censored <- which(!bh.new[,1]%in%sf$time)
+  bh.new[censored,2] <- 0
   # Get number of events from survfit object.
   nev <- sf$n.event
   # Loop over failure times
   for(u in sf$time){
     # Who survives time u?
-    survived.ids <- unique(data[which(data$survtime >= u),"id"])
+    survived.ids <- unique(data[which(data$survtime >= u), "id"])
     # index of u
     sf.idx <- which(sf$time == u)
     bh.idx <- which(bh.new[,2] == u)

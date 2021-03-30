@@ -134,16 +134,16 @@ D.new <- Reduce('+', D.cont)/n
 var.e.new <- (sum(e)/sum(mi))
 
 # Update for lambda - Not currently at all working!
-bh.new <- lambdaUpdate(dat.ord, bh, sf, Eexpbu)
-bh.new <- cbind(cumsum(bh.new[,1]), bh.new[,2])
+bh.new <- lambdaUpdate(data = dat.ord, bh = bh, sf = sf, Eexpbu = Eexpbu)
+l0.new <- bh.new$haz.cont
 # plot against one from coxph
-plot(bh[,1]~bh.new[,1],pch=19,cex=.35); lines(-10:10,-10:10,lty=3,col="grey")
+plot(l0~l0.new,pch=19,cex=.35); lines(-10:10,-10:10,lty=3,col="grey")
 
 gamma.new <- gammaUpdate(dat.ord, sf, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)
             
 # Update parameters, and re-do loop (manually)
 D <- D.new; var.e <- var.e.new; gamma <- gamma.new
-b <- t(Ebi.mat); l0 <- bh.new[,1]
+b <- t(Ebi.mat); l0 <- l0.new
 
 # Try and put this in a function ! ----------------------------------------
 rm(list=setdiff(ls(), "dat.ord"))

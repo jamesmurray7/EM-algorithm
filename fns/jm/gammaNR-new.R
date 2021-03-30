@@ -16,9 +16,10 @@ gammaUpdate <- function(data, sf, gamma,
   for(i in uids){
     Ti <- unique(filter.data[filter.data$id == i, "survtime"])
     ZiTi <- cbind(1, Ti)
-    Score.cont[p] <- ZiTi %*% as.vector(Ebi[[i]]) - sum(Ebexpbu[[i]])/sum(Eexpbu[[i]])
-    Information.cont[p] <- sum(Ebbexpbu[[i]] * Eexpbu[[i]] - Ebexpbu[[i]] * Ebexpbu[[i]])/sum(Eexpbu[[i]]^2)
+    Score.cont[p] <- ZiTi %*% t(Ebi[[i]]) - sum(Ebexpbu[[i]])/sum(Eexpbu[[i]])
+    Information.cont[p] <- sum(Ebbexpbu[[i]]) * sum(Eexpbu[[i]]) - sum(Ebexpbu[[i]]^2)/sum(Eexpbu[[i]]^2)
     p <- p + 1
   }
-  gamma + sum(Score.cont)/-sum(Information.cont)
+  gamma + sum(Score.cont)/sum(Information.cont)
 }
+
