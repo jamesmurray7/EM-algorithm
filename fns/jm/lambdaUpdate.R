@@ -2,7 +2,7 @@
 #' lambdaUpdate.R // Update for the hazard, lambda
 #' #########
 
-lambdaUpdate <- function(data, bh, sf, Tis, Eexpbu){
+lambdaUpdate <- function(data, bh, sf, Eexpbu){
   if(class(sf) != "summary.survfit") stop("sf needs to be summary(sf), change later")
   bh.new <- bh 
   # Censored observations have zero point-mass.
@@ -15,14 +15,14 @@ lambdaUpdate <- function(data, bh, sf, Tis, Eexpbu){
     # Who survives time u?
     survived.ids <- unique(data[which(data$survtime >= u), "id"])
     # index of u
-    sf.idx <- which(Tis == u)
     bh.idx <- which(bh.new[,1] == u)
+    sf.idx <- which(sf$time == u)
     # Numerator (likely = 1 in simulation)
     num <- sum(nev[sf.idx])
     # Denominator, loop through subjects who survive u and sum E[exp(\gamma(b0+b1u))]
     denom <- c(); p <- 1
     for(i in survived.ids){
-      denom[p] <- Eexpbu[[i]][sf.idx]
+      denom[p] <- Eexpbu[[i]][bh.idx]
       p <- p + 1
     }
     denom <- sum(denom)
@@ -30,3 +30,15 @@ lambdaUpdate <- function(data, bh, sf, Tis, Eexpbu){
   }
   bh.new  
 }
+
+bh.new <- bh
+censored <- which(!bh.new[,1]%in%sf$time)
+
+for(u in sf$time){
+  survived.ids <- unique(dat.ord[which(dat.ord$survtime >= u), "id"])
+  # print(length(survived.ids))
+  bh.idx <- which(bh.new[,1]==u)
+  num <- sum(nev[])
+}
+
+
