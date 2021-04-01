@@ -55,7 +55,7 @@ for(i in uids){
   # Mean and variance for GH-Quad transformation
   W <- getW(i.dat, D, var.e)
   Wzi <- chol((W$W22 - W$W21 %*% solve(W$W11) %*% W$W12) * 2)
-  bzi <- W$W21 %*% solve(W$W11) %*% residi
+  bzi <- rowMeans(b) + W$W21 %*% solve(W$W11) %*% residi
   # loop over m absicca an weights
   # Set up empty matrices and vectors
   fti.store <- c()
@@ -83,7 +83,7 @@ for(i in uids){
       fti.store[p] <- expbtD * expSt * ww
       
       # exp(b0+b1u)
-      expbu.store[p,] <- exp(gamma * Zis %*% b.abs) # `C` in Pete's code
+      expbu.store[p,] <- exp(gamma * Zis %*% b.abs)
       # (b0 + b1u) * exp(b0+b1u)
       bexpbu.store[p,1:2] <- colSums(
         exp(gamma * Zis %*% b.abs) %*% t(b.abs) * Zis * cbind(l0[1:idx], l0[1:idx])
@@ -115,33 +115,34 @@ for(i in uids){
 # Exit loop and M-step ...
 
 Ebi.mat <- matrix(unlist(Ebi), nr = n, nc = 2, byrow = T)
-Ebi2.mat <- matrix(unlist(Ebi2), nr = n, nc = 3, byrow = T)# Update for D and var.epsilon ...
-D.cont <- list()
+Ebi2.mat <- matrix(unlist(Ebi2), nr = n, nc = 3, byrow = T) # Update for D and var.epsilon ...
+
+# M-step ----
+# D.new
+cm <- colMeans(Ebi2.mat)
+D.new <- matrix(NA, 2, 2)
+diag(D.new) <- cm[1:2]
+D.new[lower.tri(D.new)] <- D.new[upper.tri(D.new)] <- cm[3]
+# var.epsilon.new
 mi <- c(); e <- c()
 for(i in uids){
   i.dat <- subset(dat.ord, id == i)
   Yi <- matrix(i.dat$Y, nc = 1); Yi2 <- Yi^2
-  t <- i.dat$time; ones <- matrix(1, nr = length(t))
-  mi[i] <- nrow(Zi)
-  # D
-  D.cont[[i]] <- tcrossprod(Ebi.mat[i,])
-  # e
-  Eb0 <- Ebi.mat[i,1]; Eb1 <- Ebi.mat[i,2]
-  Eb02 <- Ebi2.mat[i,1]; Eb12 <- Ebi2.mat[i,2]
-  Eb0b1 <- Ebi2.mat[i,3]
-  r <- Yi2 - Yi %*% Eb0 - Yi %*% Eb1 * t
-  e[i] <- sum(r + Eb02 * ones + Eb12 * t + 2 * Eb0b1 * t)
+  t <- i.dat$time; t2 <- t^2
+  ones <- matrix(1, nr = length(t))
+  mi[i] <- length(t)
+  r <- Yi2 - 2 * Yi * cbind(ones, t) %*% Ebi.mat[i,1:2] # == 2 * Yi %*% Eb0 - 2 * Yi %*% Eb1 * t
+  e[i] <- sum(r + cbind(ones, t2) %*% Ebi2.mat[i,1:2] + 2 * t * Ebi2.mat[i,3]) # == Eb02 * ones + Eb12 * t2 + 2 * Eb0b1 * t
 }
-D.new <- Reduce('+', D.cont)/n
-var.e.new <- (sum(e)/sum(mi))
+var.e.new <- sum(e)/sum(mi)
 
 # Update for lambda - Not currently at all working!
 bh.new <- lambdaUpdate(data = dat.ord, bh = bh, sf = sf, Eexpbu = Eexpbu)
 l0.new <- bh.new$haz.cont
 # plot against one from coxph
-plot(l0~l0.new,pch=19,cex=.35); lines(-10:10,-10:10,lty=3,col="grey")
+plot(l0~l0.new,pch=19,cex=.35); lines(-10:10,-10:10,lty=5,col="cyan")
 
-gamma.new <- gammaUpdate(dat.ord, sf, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)
+gamma.new <- gammaUpdate(dat.ord, sf, l0, Tis, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)$gamma.new
             
 # Update parameters, and re-do loop (manually)
 D <- D.new; var.e <- var.e.new; gamma <- gamma.new
@@ -223,7 +224,7 @@ jm <- function(data,
       # Mean and variance for GH-Quad transformation
       W <- getW(i.dat, D, var.e)
       Wzi <- chol((W$W22 - W$W21 %*% solve(W$W11) %*% W$W12) * 2)
-      bzi <- W$W21 %*% solve(W$W11) %*% residi
+      bzi <- rowMeans(b) + W$W21 %*% solve(W$W11) %*% residi
       # loop over m absicca an weights
       # Set up empty matrices and vectors
       fti.store <- c()
@@ -261,7 +262,7 @@ jm <- function(data,
             exp(gamma * Zis %*% b.abs) %*% t(b.abs2) * Zis^2 * cbind(l0[1:idx], l0[1:idx])
           )
           bbexpbu.store[p,3] <- 2 * colSums(
-            exp(gamma * Zis %*% b.abs) %*% bb2.store[p,3] * Zis[,2] * cbind(l0[1:idx])
+            exp(gamma * Zis %*% b.abs) %*% bb2.store[p,3] * Zis[,2] * l0[1:idx]
           )
           
           p <- p + 1
@@ -284,32 +285,32 @@ jm <- function(data,
     
     Ebi.mat <- matrix(unlist(Ebi), nr = n, nc = 2, byrow = T)
     Ebi2.mat <- matrix(unlist(Ebi2), nr = n, nc = 3, byrow = T)
-    # Update for D and var.epsilon
-    D.cont <- list()
+    
+    # M step ----
+    # D.new
+    cm <- colMeans(Ebi2.mat)
+    D.new <- matrix(NA, 2, 2)
+    diag(D.new) <- cm[1:2]
+    D.new[lower.tri(D.new)] <- D.new[upper.tri(D.new)] <- cm[3]
+    # var.epsilon.new
     mi <- c(); e <- c()
     for(i in uids){
-      i.dat <- subset(data, id == i)
+      i.dat <- subset(dat.ord, id == i)
       Yi <- matrix(i.dat$Y, nc = 1); Yi2 <- Yi^2
-      t <- i.dat$time; ones <- matrix(1, nr = length(t))
-      mi[i] <- nrow(Zi)
-      # D
-      D.cont[[i]] <- tcrossprod(Ebi.mat[i,])
-      # e
-      Eb0 <- Ebi.mat[i,1]; Eb1 <- Ebi.mat[i,2]
-      Eb02 <- Ebi2.mat[i,1]; Eb12 <- Ebi2.mat[i,2]
-      Eb0b1 <- Ebi2.mat[i,3]
-      r <- Yi2 - Yi %*% Eb0 - Yi %*% Eb1 * t
-      e[i] <- sum(r + Eb02 * ones + Eb12 * t + 2 * Eb0b1 * t)
+      t <- i.dat$time; t2 <- t^2
+      ones <- matrix(1, nr = length(t))
+      mi[i] <- length(t)
+      r <- Yi2 - 2 * Yi * cbind(ones, t) %*% Ebi.mat[i,1:2] # == 2 * Yi %*% Eb0 - 2 * Yi %*% Eb1 * t
+      e[i] <- sum(r + cbind(ones, t2) %*% Ebi2.mat[i,1:2] + 2 * t * Ebi2.mat[i,3]) # == Eb02 * ones + Eb12 * t2 + 2 * Eb0b1 * t
     }
-    D.new <- Reduce('+', D.cont)/n
-    var.e.new <- (sum(e)/sum(mi))
+    var.e.new <- sum(e)/sum(mi)
     
     # Update for lambda
     bh.new <- lambdaUpdate(data, bh = bh, sf = sf, Eexpbu = Eexpbu)
     l0.new <- bh.new$haz.cont
     
     # Update for gamma
-    gamma.new <- gammaUpdate(data, sf, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)
+    gamma.new <- gammaUpdate(data, sf, l0, Tis, gamma, Ebi, Eexpbu, Ebexpbu, Ebbexpbu)$gamma.new
     
     # Collate parameters.
     params.new <- c(gamma.new, vech(D.new), var.e.new);
@@ -328,10 +329,10 @@ jm <- function(data,
     gamma <- gamma.new
     iter <- iter+1
   }
-  
+  params
 }
 
 surv.fit <- coxph(Surv(survtime, status) ~ Y, dat.ord[dat.ord$time == floor(dat.ord$survtime),])
 
-jm(data = dat.ord, D.init = SigmaGen(1,1), var.e.init = 1, gamma.init = 0, cph = surv.fit)
-
+jm(data = dat.ord, D.init = SigmaGen(1,0.5), var.e.init = 1.5^2, gamma.init = 0, cph = surv.fit)
+# target: vech(D) = (1,0.25,0.25), var.e = 2.25, gamma = 1
